@@ -1,7 +1,7 @@
 # 02 — Autentikimi me JWT, verifikimi i emailit dhe rikuperimi
 
 **Karta** — [BE][P0] 08  
-**Statusi** — Analizë për implementim. Kjo kartë është task-u i parë i zgjedhur për implementim.
+**Statusi** — Endpoint-et e backend-it janë implementuar. Integrimi me React dhe dorëzimi në një server real emaili verifikohen veçmas.
 
 ## Qëllimi
 
@@ -89,7 +89,7 @@ Krijo `RegisterRequest`, `IUserRepository` dhe implementimin Eloquent. Regjistro
 
 Përdor URL-në e nënshkruar me afat dhe kontrollo ID-në dhe hash-in e emailit të llogarisë së kyçur. Konfigurimi i URL-së së nënshkruar kërkon një `APP_KEY` aktive. Përsëritja e një verifikimi të vlefshëm për një llogari tashmë të verifikuar duhet të jetë pa efekt shtesë.
 
-Për integrimin e ardhshëm, emaili do të hapë faqen e verifikimit dhe ajo do ta thërrasë API-në me JWT, duke ruajtur URL-në e plotë të nënshkruar. Deri atëherë, testet e backend-it e thërrasin drejtpërdrejt endpoint-in me URL-në e nënshkruar dhe header-in Bearer. [Verifikimi i emailit në Laravel](https://laravel.com/docs/12.x/verification)
+Emaili hap faqen `/verify-email` nën `FRONTEND_URL`. Klienti lexon parametrin `verification_url`, kontrollon që i përket API-së së konfiguruar dhe dërgon `POST` te URL-ja e plotë me Bearer JWT, duke ruajtur query-n e nënshkruar. URL-ja e API-së në email përdor `APP_URL`. [Verifikimi i emailit në Laravel](https://laravel.com/docs/12.x/verification)
 
 ### 5. Shto rikuperimin e fjalëkalimit
 
@@ -97,7 +97,11 @@ Krijo migrimin `password_reset_tokens`, konfiguro broker-in `users` dhe shto `Fo
 
 Kur tokeni i reset-it është i vlefshëm, shkruaj hash-in e ri dhe rrit `auth_version` atomikisht në të njëjtin përditësim të përdoruesit. Password Broker konsumon tokenin pas suksesit. Një JWT e lëshuar me versionin e mëparshëm refuzohet në kërkesën pasuese, përfshirë tokenët nga pajisje të tjera. Për testet e backend-it, merre tokenin nga njoftimi i kapur në test dhe dërgoje te endpoint-i i reset-it.
 
+Emaili i rikuperimit hap `/reset-password` nën `FRONTEND_URL` me parametrat `email` dhe `token`. Klienti i dërgon te `POST /api/v1/auth/reset-password` bashkë me fjalëkalimin e ri dhe konfirmimin. Për dorëzim real, vendos `MAIL_MAILER`, hostin, portin dhe adresën e dërguesit sipas transportit të mjedisit.
+
 ## Kriteret e pranimit
+
+Testi HTTP mund të ekzekutohet nga rrënja e projektit me `php backend/tests/Feature/auth_http.php`. Ai përdor SQLite në memorie dhe kap njoftimet pa dërguar email.
 
 - [ ] Regjistrimi krijon llogarinë me fjalëkalim të hashuar, `auth_version = 0` dhe email të paverifikuar.
 - [ ] Login-i i vlefshëm lëshon JWT dhe `/me` kthen përdoruesin e duhur. Kredencialet e gabuara marrin `401` me mesazh të njëjtë.
