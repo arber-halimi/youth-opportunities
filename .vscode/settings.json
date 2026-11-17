@@ -1,0 +1,7 @@
+{
+    "Laravel.basePath": "backend",
+    "Laravel.phpEnvironment": "local",
+    "Laravel.phpCommand": ["php"],
+    "Laravel.artisanMake.commandPalette": true,
+    "Laravel.artisanMake.explorer": true
+}
