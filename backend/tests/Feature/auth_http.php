@@ -1,5 +1,6 @@
 <?php
 use App\Models\User;
+use Database\Seeders\AuthorizationSeeder;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Contracts\Http\Kernel;
@@ -20,6 +21,7 @@ try {
         'database.default' => 'sqlite',
         'database.connections.sqlite' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => ''],
         'cache.default' => 'array',
+        'logging.default' => 'null',
         'app.url' => 'http://localhost:8000',
         'app.key' => 'base64:'.base64_encode(random_bytes(32)),
         'auth.frontend_url' => 'http://localhost:5173',
@@ -29,12 +31,11 @@ try {
         'jwt.blacklist_grace_period' => 0,
     ]);
     DB::purge('sqlite');
-    foreach (glob($backend.'/database/migrations/*_create_users_table.php') as $file) {
+    foreach (glob($backend.'/database/migrations/*.php') as $file) {
         (require $file)->up();
     }
-    foreach (glob($backend.'/database/migrations/*_create_password_reset_tokens_table.php') as $file) {
-        (require $file)->up();
-    }
+    (new AuthorizationSeeder)->run();
+    (new AuthorizationSeeder)->run();
     Notification::fake();
 
     $call = function ($method, $path, $status, $data = [], $jwt = null, $ip = '127.0.0.1', $accept = true) use ($app, $kernel) {
@@ -48,7 +49,7 @@ try {
         if ($jwt !== null) {
             $headers['HTTP_AUTHORIZATION'] = 'Bearer '.$jwt;
         }
-        $uri = str_starts_with($path, 'http') ? $path : '/api/v1/auth/'.$path;
+        $uri = str_starts_with($path, 'http') || str_starts_with($path, '/') ? $path : '/api/v1/auth/'.$path;
         $request = Request::create($uri, $method, [], [], [], $headers, json_encode($data));
         $response = $kernel->handle($request);
         $kernel->terminate($request, $response);
@@ -61,11 +62,14 @@ try {
     $email = 'test@example.test';
     $password = 'test-password-one';
     $registration = ['name' => 'Test', 'email' => ' TEST@example.test ', 'password' => $password, 'password_confirmation' => $password];
-    $registered = $call('POST', 'register', 201, $registration);
+    $registered = $call('POST', 'register', 201, [...$registration, 'role' => 'super_admin', 'roles' => ['super_admin']]);
     $call('POST', 'register', 422, $registration);
     $user = User::where('email', $email)->firstOrFail();
     if ($user->password === $password || $registered['result']['email_verified_at'] !== null) {
         throw new RuntimeException('Registration persisted an unexpected value.');
+    }
+    if ($user->roles()->pluck('roles.key')->all() !== ['user']) {
+        throw new RuntimeException('Public registration did not assign only the base role.');
     }
 
     $call('POST', 'login', 422, ['email' => []]);
@@ -136,11 +140,52 @@ try {
     $call('GET', 'me', 401, [], $newJwt);
     Carbon::setTestNow();
 
+    $superAdmin = User::create([
+        'name' => 'Super Admin',
+        'email' => 'super@example.test',
+        'password' => $password,
+    ]);
+    if (app(\App\Services\UserAuthorizationService::class)->assignFirstSuperAdmin($superAdmin->email) !== true) {
+        throw new RuntimeException('Could not assign the first Super Admin.');
+    }
+    $superJwt = $call('POST', 'login', 200, [
+        'email' => $superAdmin->email,
+        'password' => $password,
+    ])['result']['access_token'];
+    $rolesPath = '/api/v1/admin/users/'.$other->id.'/roles';
+    $statusPath = '/api/v1/admin/users/'.$other->id.'/status';
+    $call('PUT', $rolesPath, 401, ['roles' => ['admin']]);
+    $call('PUT', $rolesPath, 403, ['roles' => ['admin']], $otherJwt);
+    $call('PUT', $rolesPath, 422, ['roles' => ['unknown']], $superJwt);
+    $call('PUT', $rolesPath, 204, ['roles' => ['admin']], $superJwt);
+    $call('PATCH', $statusPath, 403, ['status' => 'suspended'], $otherJwt);
+    $call('PUT', '/api/v1/admin/users/'.$superAdmin->id.'/roles', 422, ['roles' => ['admin']], $superJwt);
+    $call('PATCH', '/api/v1/admin/users/'.$superAdmin->id.'/status', 422, ['status' => 'suspended'], $superJwt);
+    DB::unprepared("CREATE TRIGGER fail_audit BEFORE INSERT ON audit_logs BEGIN SELECT RAISE(ABORT, 'test audit failure'); END");
+    $call('PATCH', $statusPath, 500, ['status' => 'suspended'], $superJwt);
+    DB::unprepared('DROP TRIGGER fail_audit');
+    if ($other->fresh()->suspended_at !== null || $other->fresh()->auth_version !== 0) {
+        throw new RuntimeException('Status change was persisted despite audit failure.');
+    }
+    $call('PATCH', $statusPath, 204, ['status' => 'suspended'], $superJwt);
+    $call('PATCH', $statusPath, 204, ['status' => 'suspended'], $superJwt);
+    $call('GET', 'me', 401, [], $otherJwt);
+    $suspendedLogin = $call('POST', 'login', 401, ['email' => $other->email, 'password' => $password], null, '127.0.0.3');
+    if ($suspendedLogin !== $invalid || $other->fresh()->auth_version !== 1) {
+        throw new RuntimeException('Suspension changed the login response or incremented auth_version more than once.');
+    }
+    $call('PATCH', $statusPath, 204, ['status' => 'active'], $superJwt);
+    $call('GET', 'me', 401, [], $otherJwt);
+    $call('POST', 'login', 200, ['email' => $other->email, 'password' => $password], null, '127.0.0.3');
+    if (DB::table('audit_logs')->where('actor_user_id', $superAdmin->id)->where('subject_id', $other->id)->count() !== 3) {
+        throw new RuntimeException('Unexpected audit count for role and status changes.');
+    }
+
     for ($attempt = 0; $attempt < 10; $attempt++) {
         $call('POST', 'login', 401, ['email' => $email, 'password' => 'wrong'], null, '127.0.0.2');
     }
     $call('POST', 'login', 429, ['email' => $email, 'password' => 'wrong'], null, '127.0.0.2');
-    echo "PASS: registration, login, Bearer, logout, signed verification, reset, token invalidation, expiry and throttling.\n";
+    echo "PASS: authentication, role assignment, authorization, suspension, audit rollback and throttling.\n";
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage().PHP_EOL);
     exit(1);

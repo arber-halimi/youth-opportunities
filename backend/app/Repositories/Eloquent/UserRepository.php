@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Eloquent;
 
+use App\Models\Role;
 use App\Models\User;
 use App\Repositories\IUserRepository;
 
@@ -36,5 +37,27 @@ class UserRepository extends BaseRepository implements IUserRepository
     public function replacePassword(User $user, string $passwordHash): void
     {
         $user->increment('auth_version', 1, ['password' => $passwordHash]);
+    }
+
+    public function assignRoleByKey(User $user, string $key): void
+    {
+        $role = Role::query()->where('key', $key)->firstOrFail();
+        $user->roles()->attach($role->getKey());
+    }
+
+    public function findForUpdate(int $id): User
+    {
+        return $this->model->newQuery()->lockForUpdate()->findOrFail($id);
+    }
+
+    public function setSuspended(User $user, bool $suspended): void
+    {
+        $suspendedAt = $suspended ? now() : null;
+
+        if ($suspended) {
+            $user->increment('auth_version', 1, ['suspended_at' => $suspendedAt]);
+        } else {
+            $user->forceFill(['suspended_at' => null])->save();
+        }
     }
 }

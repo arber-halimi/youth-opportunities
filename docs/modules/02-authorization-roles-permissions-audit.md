@@ -1,6 +1,6 @@
 # Karta 10 — Rolet, lejet, Policies dhe auditimi bazë
 
-**Statusi** — Analizë dhe plan implementimi.
+**Statusi** — Rrjedhat e autorizimit dhe auditimit të Kartës 10 janë implementuar. Organizatat dhe anëtarësitë vazhdojnë me Kartën 11.
 
 [Karta 10 në Trello](https://trello.com/c/ULjBjrF7/10-bep0-10-roles-permissions-policies-dhe-audit-baz%C3%AB) · [Autentikimi me JWT](02-autentikimi-me-jwt.md) · [Arkitektura e backend-it](../arkitektura-backend.md)
 
@@ -42,6 +42,10 @@ Migrimet janë shtesë. Llogaritë ekzistuese marrin `user` kur s’kanë rol dh
 5. **Pronësia në nivel organizate.** Me kartën 11, lidhe anëtarësinë me Policies e rekordeve private. Repository filtron listat sipas organizatës para paginimit. Lidhja e mundësive ekzistuese me organizatat duhet plotësuar para se `opportunities.organization_id` të bëhet i detyrueshëm.
 
 Për veprimet administrative, `401` tregon autentikim të pavlefshëm dhe `403` tregon që aktorit i mungon leja. Payload-i i pavlefshëm kthen `422`. Auditimi ruan aktorin, subjektin, kohën dhe ndryshimin. Fjalëkalimet, JWT-të dhe tokenët e rikuperimit përjashtohen nga të dhënat e auditimit.
+
+`PUT /api/v1/admin/users/{user}/roles` zëvendëson caktimet me një listë jo të zbrazët të çelësave të roleve, për shembull `{"roles":["user","admin"]}`. `PATCH /api/v1/admin/users/{user}/status` pranon `{"status":"suspended"}` ose `{"status":"active"}`. Të dy endpoint-et kthejnë `204` në sukses. Pezullimi ose heqja e rolit nga Super Admin-i i fundit aktiv kthen `422`.
+
+Për ta përgatitur një databazë, ekzekuto `php artisan migrate` dhe `php artisan db:seed --class=AuthorizationSeeder` nga folderi `backend`. Pastaj cakto Super Admin-in e parë me `php artisan auth:assign-first-super-admin EMAIL`.
 
 ## Kriteret e pranimit
 

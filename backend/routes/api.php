@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Middleware\EnsureCurrentAuthVersion;
@@ -20,4 +21,9 @@ Route::prefix('auth')->group(function (): void {
         Route::post('email/verification-notification', [AuthController::class, 'resendVerification'])
             ->middleware('throttle:5,1,auth-verify-resend');
     });
+});
+
+Route::prefix('admin/users')->middleware(['auth:api', EnsureCurrentAuthVersion::class])->group(function (): void {
+    Route::put('{user}/roles', [AdminUserController::class, 'updateRoles']);
+    Route::patch('{user}/status', [AdminUserController::class, 'updateStatus']);
 });

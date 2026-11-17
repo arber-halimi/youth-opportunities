@@ -13,4 +13,10 @@ interface IUserRepository extends IRepository
     public function markEmailVerified(User $user): ?User;
 
     public function replacePassword(User $user, string $passwordHash): void;
+
+    public function assignRoleByKey(User $user, string $key): void;
+
+    public function findForUpdate(int $id): User;
+
+    public function setSuspended(User $user, bool $suspended): void;
 }

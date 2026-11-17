@@ -21,7 +21,7 @@ class EnsureCurrentAuthVersion
             throw new AuthenticationException;
         }
 
-        if ($version !== $user->auth_version) {
+        if ($user === null || $user->suspended_at !== null || $version !== $user->auth_version) {
             throw new AuthenticationException;
         }
 

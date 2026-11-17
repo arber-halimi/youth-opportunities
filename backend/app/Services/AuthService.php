@@ -7,6 +7,7 @@ use App\Repositories\IUserRepository;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Tymon\JWTAuth\JWTGuard;
@@ -19,7 +20,11 @@ class AuthService
     {
         /** @var JWTGuard $guard */
         $guard = auth('api');
-        $token = $guard->attempt(['email' => $email, 'password' => $password]);
+        $token = $guard->attempt([
+            'email' => $email,
+            'password' => $password,
+            'suspended_at' => null,
+        ]);
 
         if ($token === false) {
             return null;
@@ -40,18 +45,25 @@ class AuthService
     public function register(#[\SensitiveParameter] array $attributes): User
     {
         try {
-            $user = $this->users->create($attributes);
+            $user = DB::transaction(function () use ($attributes): User {
+                $user = $this->users->create($attributes);
+                $this->users->assignRoleByKey($user, 'user');
+
+                return $user;
+            });
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages([
                 'email' => __('validation.unique', ['attribute' => 'email']),
             ]);
         }
 
-        try {
-            event(new Registered($user));
-        } catch (TransportExceptionInterface $exception) {
-            report($exception);
-        }
+        DB::afterCommit(function () use ($user): void {
+            try {
+                event(new Registered($user));
+            } catch (TransportExceptionInterface $exception) {
+                report($exception);
+            }
+        });
 
         return $user;
     }
